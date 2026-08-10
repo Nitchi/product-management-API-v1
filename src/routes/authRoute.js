@@ -4,6 +4,7 @@ import { registerValidator, loginValidator, registerAdmin} from "../validators/a
 import validationMiddleware from "../middleware/validationMiddleware.js";
 import adminMiddleware from "../middleware/adminMiddleware.js";
 import authorize from "../middleware/authMiddleware.js";
+import ROLES from "../constants/roles.js";
 
 
 const router = express.Router();
@@ -25,7 +26,7 @@ router.post(
 router.post(
   "/admin",
   authMiddleware,
-  authorize("ADMIN"),
+  authorize(ROLES.ADMIN),
   registerValidator,
   validationMiddleware,
   registerAdmin

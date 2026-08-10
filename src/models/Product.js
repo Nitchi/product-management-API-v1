@@ -106,18 +106,18 @@ Product.init(
       defaultValue: true,
     },
 
-    discounted_price: {
-      type: DataTypes.VIRTUAL,
+    // discounted_price: {
+    //   type: DataTypes.VIRTUAL,
 
-      get() {
-        const price = Number(this.price);
-        const discount = Number(this.discount_percentage ?? 0);
+    //   get() {
+    //     const price = Number(this.price);
+    //     const discount = Number(this.discount_percentage ?? 0);
 
-        return Number(
-          (price * (1 - discount / 100)).toFixed(2)
-        );
-      },
-    },
+    //     return Number(
+    //       (price * (1 - discount / 100)).toFixed(2)
+    //     );
+    //   },
+    // },
 
     created_at: {
       type: DataTypes.DATE,

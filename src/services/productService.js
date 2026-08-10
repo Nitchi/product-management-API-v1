@@ -1,17 +1,98 @@
-import Product from "../models/Product";
+import { Product, Category } from "../models/index.js";
 import Role from "../models/Role"; 
+import { randomUUID } from "crypto";
+import slugify from "slugify";
+import uploadToCloudinary from "../utils/uploadToCloudinary.js";
+import deleteFromCloudinary from "../utils/deleteFromCloudinary.js";
+import ApiError from "../utils/ApiError.js";
+import HTTP_STATUS from "../constants/httpStatus.js";
 
+export const createProduct = async (productData, imageFile) => {
 
-export const createProduct = async(data, user) =>{
-    const product = await Product.create({
-        name: data.name,
-        description: data.description,
-        price: data.price,
-        discount_percentage: discount_percentage,
-        quantity_in_stock: data.quantity_in_stock,
-        img_url: data.img_url, 
+  let uploadedImage = null;
+
+  try {
+
+    const {
+      name,
+      description,
+      category_id,
+      price,
+      quantity_in_stock,
+      discount_percentage = 0,
+    } = productData;
+
+    const category = await Category.findByPk(category_id);
+
+    if (!category) {
+      throw new ApiError(
+        HTTP_STATUS.NOT_FOUND,
+        "Category not found."
+      );
+    }
+
+    const existingProduct = await Product.findOne({
+      where: {
+        name,
+        category_id,
+      },
     });
-    return product
+
+    if (existingProduct) {
+      throw new ApiError(
+        HTTP_STATUS.CONFLICT,
+        "A product with this name already exists in this category."
+      );
+    }
+
+    uploadedImage = await uploadToCloudinary(imageFile);
+
+    const slug = `${slugify(name, {
+      lower: true,
+      strict: true,
+    })}-${randomUUID().slice(0, 8)}`;
+
+    const product = await Product.create({
+      name,
+      slug,
+      description,
+      category_id,
+      price,
+      quantity_in_stock,
+      discount_percentage,
+      image_url: uploadedImage.image_url,
+      image_public_id: uploadedImage.public_id,
+    });
+
+    const createdProduct = await Product.findByPk(product.id, {
+      include: [
+        {
+          model: Category,
+          as: "category",
+          attributes: ["id", "name"],
+        },
+      ],
+    });
+
+    return {
+      success: true,
+      message: "Product created successfully.",
+      data: {
+        ...createdProduct.toJSON(),
+        discounted_price:
+          Number(createdProduct.price) *
+          (1 - Number(createdProduct.discount_percentage) / 100),
+      },
+    };
+
+  } catch (error) {
+
+    if (uploadedImage?.public_id) {
+      await deleteFromCloudinary(uploadedImage.public_id);
+    }
+
+    throw error;
+  }
 };
 
 
