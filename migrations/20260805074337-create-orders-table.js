@@ -35,10 +35,10 @@ export default {
 
       status: {
         type: Sequelize.ENUM(
-          'Pending',
-          'Processing',
-          'Delivered',
-          'Cancelled'
+           "PENDING",
+           "PROCESSING",
+           "DELIVERED",
+           "CANCELLED"
         ),
         allowNull: false,
         defaultValue: 'Pending',

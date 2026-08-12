@@ -1,5 +1,5 @@
 import { Model, DataTypes } from "sequelize";
-import sequelize from "../config/db.js";
+import sequelize from "../config/database.js";
 
 class Review extends Model {}
 
@@ -73,6 +73,12 @@ Review.init(
       type: DataTypes.DATE,
       allowNull: true,
     },
+
+    deleted_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+  
   },
 
   {
@@ -86,6 +92,8 @@ Review.init(
 
     createdAt: "created_at",
 
+    paranoid: true,
+
     updatedAt: "updated_at",
 
     indexes: [
@@ -97,5 +105,7 @@ Review.init(
     ],
   }
 );
+
+
 
 export default Review;

@@ -1,5 +1,5 @@
 import { Model, DataTypes } from "sequelize";
-import sequelize from "../config/db.js";
+import sequelize from "../config/database.js";
 
 class Product extends Model {}
 
@@ -9,47 +9,37 @@ Product.init(
       type: DataTypes.INTEGER,
       autoIncrement: true,
       primaryKey: true,
+      allowNull: false,
+    },
+
+    name: {
+      type: DataTypes.STRING(150),
+      allowNull: false,
+    },
+
+    slug: {
+      type: DataTypes.STRING(180),
+      allowNull: false,
+      unique: true,
+    },
+
+    description: {
+      type: DataTypes.TEXT,
+      allowNull: false,
     },
 
     category_id: {
       type: DataTypes.INTEGER,
       allowNull: false,
+
       references: {
         model: "categories",
         key: "id",
       },
     },
 
-    name: {
-      type: DataTypes.STRING(255),
-      allowNull: false,
-      unique: true,
-
-      validate: {
-        notEmpty: {
-          msg: "Product name is required.",
-        },
-      },
-    },
-
-    description: {
-      type: DataTypes.TEXT,
-      allowNull: false,
-
-      validate: {
-        notEmpty: {
-          msg: "Description is required.",
-        },
-
-        len: {
-          args: [10, 2000],
-          msg: "Description must be between 10 and 2000 characters.",
-        },
-      },
-    },
-
     price: {
-      type: DataTypes.DECIMAL(12, 2),
+      type: DataTypes.DECIMAL(10, 2),
       allowNull: false,
 
       validate: {
@@ -60,9 +50,23 @@ Product.init(
       },
     },
 
+    quantity_in_stock: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 0,
+
+      validate: {
+        min: {
+          args: [0],
+          msg: "Quantity in stock cannot be negative.",
+        },
+      },
+    },
+
     discount_percentage: {
       type: DataTypes.DECIMAL(5, 2),
-      allowNull: true,
+      allowNull: false,
+      defaultValue: 0,
 
       validate: {
         min: {
@@ -77,47 +81,15 @@ Product.init(
       },
     },
 
-    quantity_in_stock: {
-      type: DataTypes.INTEGER,
-      allowNull: false,
-
-      validate: {
-        min: {
-          args: [0],
-          msg: "Stock quantity cannot be negative.",
-        },
-      },
-    },
-
     image_url: {
-      type: DataTypes.STRING(500),
+      type: DataTypes.TEXT,
       allowNull: false,
-
-      validate: {
-        isUrl: {
-          msg: "Image URL must be a valid URL.",
-        },
-      },
     },
 
-    is_available: {
-      type: DataTypes.BOOLEAN,
+    image_public_id: {
+      type: DataTypes.STRING,
       allowNull: false,
-      defaultValue: true,
     },
-
-    // discounted_price: {
-    //   type: DataTypes.VIRTUAL,
-
-    //   get() {
-    //     const price = Number(this.price);
-    //     const discount = Number(this.discount_percentage ?? 0);
-
-    //     return Number(
-    //       (price * (1 - discount / 100)).toFixed(2)
-    //     );
-    //   },
-    // },
 
     created_at: {
       type: DataTypes.DATE,
@@ -125,6 +97,11 @@ Product.init(
     },
 
     updated_at: {
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW,
+    },
+
+    deleted_at: {
       type: DataTypes.DATE,
       allowNull: true,
     },
@@ -137,11 +114,17 @@ Product.init(
 
     tableName: "products",
 
+    underscored: true,
+
     timestamps: true,
 
     createdAt: "created_at",
 
     updatedAt: "updated_at",
+
+    paranoid: true,
+
+    deletedAt: "deleted_at",
   }
 );
 

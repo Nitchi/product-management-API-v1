@@ -115,6 +115,13 @@ InventoryLog.belongsTo(Product, {
   as: "product",
 });
 
+Review.belongsTo(User, {
+  foreignKey: "user_id",
+  as: "user",
+});
+
+
+
 export {
   Role,
   User,

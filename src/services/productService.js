@@ -1,5 +1,6 @@
 import { Product, Category } from "../models/index.js";
-import Role from "../models/Role"; 
+import Role from "../models/Role.js";
+import { Op } from "sequelize";
 import { randomUUID } from "crypto";
 import slugify from "slugify";
 import uploadToCloudinary from "../utils/uploadToCloudinary.js";
@@ -96,111 +97,335 @@ export const createProduct = async (productData, imageFile) => {
 };
 
 
-export const getAllProducts = async() => {
-    return await Product.findAll();
-    
-};
+export const getProducts = async (query) => {
+  const {
+    page = 1,
+    limit = 10,
+    search,
+    category_id,
+    minPrice,
+    maxPrice,
+    availability,
+    sortBy = "createdAt",
+    order = "DESC",
+  } = query;
 
-export const getProductById = async() => {
-    const product = await Product.findByPk(id);
+  const pageNumber = Math.max(Number(page), 1);
+  const limitNumber = Math.min(Math.max(Number(limit), 1), 100);
+  const offset = (pageNumber - 1) * limitNumber;
 
-    if (!product) {
-        throw new Error("Product not found.");
+  if (
+  minPrice !== undefined &&
+  maxPrice !== undefined &&
+  Number(minPrice) > Number(maxPrice)
+) {
+  throw new ApiError(
+    HTTP_STATUS.BAD_REQUEST,
+    "Minimum price cannot be greater than maximum price."
+  );
+}
+
+  
+
+  const where = {};
+
+  // Search by product name
+  if (search) {
+    where.name = {
+      [Op.iLike]: `%${search.trim()}%`,
     };
-  return product;
-};
+  }
 
-export const updateProductById = async() => {
-    
-  // Fields users are allowed to update
-  const allowedFields = [
+  // Filter by category
+  if (category_id) {
+    where.category_id = category_id;
+  }
+
+  // Filter by price range
+  if (minPrice || maxPrice) {
+    where.price = {};
+
+    if (minPrice) {
+      where.price[Op.gte] = Number(minPrice);
+    }
+
+    if (maxPrice) {
+      where.price[Op.lte] = Number(maxPrice);
+    }
+  }
+
+  // Filter by availability
+  if (availability === "IN_STOCK") {
+    where.quantity_in_stock = {
+      [Op.gt]: 0,
+    };
+  }
+
+  if (availability === "OUT_OF_STOCK") {
+    where.quantity_in_stock = {
+      [Op.eq]: 0,
+    };
+  }
+
+  // Only allow safe sorting fields
+  const allowedSortFields = [
     "name",
-    "description",
-    "discount_percentage",
-    "img_url",
-    "catgory_id"
-    
+    "price",
+    "createdAt",
+    "quantity_in_stock",
   ];
 
-  
+  const safeSortBy = allowedSortFields.includes(sortBy)
+    ? sortBy
+    : "createdAt";
 
-  // Checks that at least one valid field was sent
-  const receivedFields = Object.keys(body);
+  const safeOrder =
+    order.toUpperCase() === "ASC" ? "ASC" : "DESC";
 
-  const hasValidUpdate = receivedFields.some(field =>
-    allowedFields.includes(field)
-  );
+  const { count, rows } = await Product.findAndCountAll({
+    where,
 
-  if (!hasValidUpdate) {
-    throw new Error("Please provide at least one valid field to update.");
+    include: [
+      {
+        model: Category,
+        as: "category",
+        attributes: ["id", "name"],
+      },
+    ],
+
+    order: [[safeSortBy, safeOrder]],
+
+    limit: limitNumber,
+    offset,
+
+    distinct: true,
+  });
+
+  const products = rows.map((product) => {
+    const productData = product.toJSON();
+
+    const price = Number(productData.price);
+    const discount = Number(
+      productData.discount_percentage
+    );
+
+    return {
+      ...productData,
+
+      discounted_price:
+        price - (price * discount) / 100,
+
+      availability:
+        Number(productData.quantity_in_stock) > 0
+          ? "IN_STOCK"
+          : "OUT_OF_STOCK",
+    };
+  });
+
+  return {
+    success: true,
+
+    data: products,
+
+    pagination: {
+      currentPage: pageNumber,
+      totalPages: Math.ceil(count / limitNumber),
+      totalItems: count,
+      itemsPerPage: limitNumber,
+    },
+  };
+};
+
+
+export const getProductById = async (id) => {
+  const product = await Product.findByPk(id, {
+    include: [
+      {
+        model: Category,
+        as: "category",
+        attributes: ["id", "name"],
+      },
+    ],
+  });
+
+  if (!product) {
+    throw new ApiError(
+      HTTP_STATUS.NOT_FOUND,
+      "Product not found."
+    );
   }
 
-  // Find project
-  const project = await Project.findByPk(id);
+  const productData = product.toJSON();
 
-  if (!project) {
-    throw new Error("Project not found.");
+  const price = Number(productData.price);
+  const discount = Number(productData.discount_percentage);
+
+  return {
+    success: true,
+    data: {
+      ...productData,
+      discounted_price: price - (price * discount) / 100,
+      availability:
+        Number(productData.quantity_in_stock) > 0
+          ? "IN_STOCK"
+          : "OUT_OF_STOCK",
+    },
+  };
+};
+
+export const updateProduct = async (id, productData, imageFile) => {
+  const product = await Product.findByPk(id);
+
+  if (!product) {
+    throw new ApiError(
+      HTTP_STATUS.NOT_FOUND,
+      "Product not found."
+    );
   }
 
-  
-  const {
-    title,
-    description,
-    status,
-    startDate,
-    endDate,
-  } = body;
+  let newUploadedImage = null;
+  const oldPublicId = product.image_public_id;
 
-  // Check title uniqueness
-  if (title) {
+  try {
+    const {
+      name,
+      description,
+      category_id,
+      price,
+      quantity_in_stock,
+      discount_percentage,
+    } = productData;
 
-    const existingProject = await Project.findOne({
+    // Check category if one is being changed
+    if (category_id && category_id !== product.category_id) {
+      const category = await Category.findByPk(category_id);
+
+      if (!category) {
+        throw new ApiError(
+          HTTP_STATUS.NOT_FOUND,
+          "Category not found."
+        );
+      }
+    }
+
+    // Check duplicate name within category
+    const finalName = name ?? product.name;
+    const finalCategoryId = category_id ?? product.category_id;
+
+    const duplicateProduct = await Product.findOne({
       where: {
-        title,
+        name: finalName,
+        category_id: finalCategoryId,
       },
     });
 
     if (
-      existingProject &&
-      existingProject.id !== project.id
+      duplicateProduct &&
+      duplicateProduct.id !== product.id
     ) {
-      throw new Error("Project title already exists.");
+      throw new ApiError(
+        HTTP_STATUS.CONFLICT,
+        "A product with this name already exists in this category."
+      );
     }
+
+    // Upload new image only if supplied
+    if (imageFile) {
+      newUploadedImage = await uploadToCloudinary(imageFile);
+    }
+
+    // Generate new slug only when name changes
+    let slug = product.slug;
+
+    if (name && name !== product.name) {
+      slug = `${slugify(name, {
+        lower: true,
+        strict: true,
+      })}-${randomUUID().slice(0, 8)}`;
+    }
+
+    await product.update({
+      ...(name !== undefined && { name }),
+      ...(description !== undefined && { description }),
+      ...(category_id !== undefined && { category_id }),
+      ...(price !== undefined && { price }),
+      ...(quantity_in_stock !== undefined && {
+        quantity_in_stock,
+      }),
+      ...(discount_percentage !== undefined && {
+        discount_percentage,
+      }),
+      slug,
+
+      ...(newUploadedImage && {
+        image_url: newUploadedImage.image_url,
+        image_public_id: newUploadedImage.public_id,
+      }),
+    });
+
+    // Delete old image only AFTER database update succeeds
+    if (newUploadedImage && oldPublicId) {
+      await deleteFromCloudinary(oldPublicId);
+    }
+
+    const updatedProduct = await Product.findByPk(id, {
+      include: [
+        {
+          model: Category,
+          as: "category",
+          attributes: ["id", "name"],
+        },
+      ],
+    });
+
+    const productDataResponse = updatedProduct.toJSON();
+
+    const finalPrice = Number(productDataResponse.price);
+    const discount = Number(
+      productDataResponse.discount_percentage
+    );
+
+    return {
+      success: true,
+      message: "Product updated successfully.",
+      data: {
+        ...productDataResponse,
+        discounted_price:
+          finalPrice - (finalPrice * discount) / 100,
+        availability:
+          Number(productDataResponse.quantity_in_stock) > 0
+            ? "IN_STOCK"
+            : "OUT_OF_STOCK",
+      },
+    };
+  } catch (error) {
+    // If new image was uploaded but DB operation failed,
+    // remove the new image from Cloudinary.
+    if (newUploadedImage?.public_id) {
+      await deleteFromCloudinary(
+        newUploadedImage.public_id
+      );
+    }
+
+    throw error;
   }
+};
 
-  
-  const updatedData = {
+export const deleteProduct = async (id) => {
+  const product = await Product.findByPk(id);
 
-    title: title ?? project.title,
-    description: description ?? project.description,
-    status: status ?? project.status,
-    startDate: startDate ?? project.startDate,
-    endDate: endDate ?? project.endDate,
-
-  };
-
-  // Validate dates
-  const start = new Date(updatedData.startDate);
-  const end = new Date(updatedData.endDate);
-
-  start.setHours(0,0,0,0);
-  end.setHours(0,0,0,0);
-
-  if (end < start) {
-    throw new Error(
-      "End date cannot be before the start date."
+  if (!product) {
+    throw new ApiError(
+      HTTP_STATUS.NOT_FOUND,
+      "Product not found."
     );
   }
 
-  // Update database
-  await project.update(updatedData);
+  await product.destroy();
 
-  return project;
-
-
-
+  return {
+    success: true,
+    message: "Product deleted successfully.",
+  };
 };
 
-export const deleteProjectById = async() => {
-
-};

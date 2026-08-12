@@ -1,9 +1,10 @@
 import express from "express";
-import { register, login } from "../controllers/authController.js";
-import { registerValidator, loginValidator, registerAdmin} from "../validators/authValidator.js";
+import { register, login, registerAdmin } from "../controllers/authController.js";
+import { registerValidator, loginValidator} from "../validators/authValidator.js";
 import validationMiddleware from "../middleware/validationMiddleware.js";
 import adminMiddleware from "../middleware/adminMiddleware.js";
-import authorize from "../middleware/authMiddleware.js";
+import authorize from "../middleware/authorizeMiddleware.js";
+import authMiddleware from "../middleware/authMiddleware.js";
 import ROLES from "../constants/roles.js";
 
 
